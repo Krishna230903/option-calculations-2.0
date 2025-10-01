@@ -32,7 +32,6 @@ NIFTY_50_TICKERS = [
 
 def calculate_binomial_prices(S, K, r_percent, vol_percent, T):
     """Calculates single-period binomial option prices."""
-    # (This is the original function you provided)
     results = {}
     r, sigma = r_percent / 100, vol_percent / 100
     u, d = 1 + sigma, 1 / (1 + sigma)
@@ -53,7 +52,6 @@ def black_scholes(S, K, T, r_percent, vol_percent):
     results = {}
     r, sigma = r_percent / 100, vol_percent / 100
     
-    # Ensure T, sigma > 0 to avoid math errors
     if T <= 0 or sigma <= 0:
         results['error'] = "Time to expiration and volatility must be positive for Black-Scholes."
         return results
@@ -64,11 +62,10 @@ def black_scholes(S, K, T, r_percent, vol_percent):
     call_price = (S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2))
     put_price = (K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1))
     
-    # Greeks
     call_delta = norm.cdf(d1)
     put_delta = call_delta - 1
     gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
-    vega = S * norm.pdf(d1) * np.sqrt(T) / 100 # per 1% change
+    vega = S * norm.pdf(d1) * np.sqrt(T) / 100
     call_theta = (- (S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) - r * K * np.exp(-r * T) * norm.cdf(d2)) / 365
     put_theta = (- (S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) + r * K * np.exp(-r * T) * norm.cdf(-d2)) / 365
 
@@ -84,8 +81,8 @@ def calculate_historical_volatility(data):
     """Calculates annualized historical volatility."""
     log_returns = np.log(data['Close'] / data['Close'].shift(1))
     daily_vol = log_returns.std()
-    annual_vol = daily_vol * np.sqrt(252) # 252 trading days in a year
-    return annual_vol * 100 # Return as percentage
+    annual_vol = daily_vol * np.sqrt(252)
+    return annual_vol * 100
 
 def plot_payoff_diagram(S, K, call_price, put_price):
     """Creates an interactive payoff diagram using Plotly."""
@@ -133,6 +130,12 @@ try:
     hist_vol = calculate_historical_volatility(hist)
     expirations = stock.options
     
+    # FIX: Check if expirations tuple is empty. If so, stop the app.
+    if not expirations:
+        st.sidebar.warning(f"No options data available for {ticker}.")
+        st.warning(f"Could not retrieve any option expiration dates for {ticker}. Please select another stock.")
+        st.stop()
+
     st.sidebar.metric(label=f"Current Price ({ticker})", value=f"₹{live_price:,.2f}")
     st.sidebar.metric(label="1-Year Historical Volatility", value=f"{hist_vol:.2f}%")
 
@@ -159,36 +162,36 @@ with col_chart:
 
 with col_data:
     st.subheader("Model Calculation")
-    # --- Calculations ---
+    results = {}
     if model_choice == "Black-Scholes":
         results = black_scholes(live_price, strike_price, time_to_exp_years, risk_free_rate, volatility)
     else:
         results = calculate_binomial_prices(live_price, strike_price, risk_free_rate, volatility, time_to_exp_years)
 
-    if 'error' in results:
+    if 'error' in results and results['error']:
         st.error(results['error'])
     else:
         if 'warning' in results: st.warning(results['warning'])
         
         c1, c2 = st.columns(2)
-        c1.metric("Call Option Value", f"₹{results['call_price']:.2f}")
-        c2.metric("Put Option Value", f"₹{results['put_price']:.2f}")
+        c1.metric("Call Option Value", f"₹{results.get('call_price', 0):.2f}")
+        c2.metric("Put Option Value", f"₹{results.get('put_price', 0):.2f}")
 
         if model_choice == "Black-Scholes":
             st.markdown("---")
             st.markdown("##### Option Greeks")
             g1, g2, g3, g4 = st.columns(4)
-            g1.metric("Call Delta", f"{results['call_delta']:.4f}")
-            g2.metric("Put Delta", f"{results['put_delta']:.4f}")
-            g1.metric("Gamma", f"{results['gamma']:.4f}")
-            g2.metric("Vega", f"{results['vega']:.4f}")
-            g3.metric("Call Theta", f"{results['call_theta']:.4f}")
-            g4.metric("Put Theta", f"{results['put_theta']:.4f}")
+            g1.metric("Call Delta", f"{results.get('call_delta', 0):.4f}")
+            g2.metric("Put Delta", f"{results.get('put_delta', 0):.4f}")
+            g1.metric("Gamma", f"{results.get('gamma', 0):.4f}")
+            g2.metric("Vega", f"{results.get('vega', 0):.4f}")
+            g3.metric("Call Theta", f"{results.get('call_theta', 0):.4f}")
+            g4.metric("Put Theta", f"{results.get('put_theta', 0):.4f}")
 
 # --- Payoff Diagram ---
-if 'error' not in results:
+if 'error' not in results or not results['error']:
     st.subheader("Profit/Loss Analysis")
-    st.plotly_chart(plot_payoff_diagram(live_price, strike_price, results['call_price'], results['put_price']), use_container_width=True)
+    st.plotly_chart(plot_payoff_diagram(live_price, strike_price, results.get('call_price', 0), results.get('put_price', 0)), use_container_width=True)
 
 # --- Option Chain Data ---
 st.subheader(f"Live Option Chain for {exp_date}")
@@ -196,7 +199,6 @@ try:
     opt_chain = stock.option_chain(exp_date)
     calls, puts = opt_chain.calls, opt_chain.puts
     
-    # Highlight ITM options
     calls_styled = calls.style.applymap(lambda x: 'background-color: #e8f3e8', subset=pd.IndexSlice[calls['inTheMoney'] == True, :])
     puts_styled = puts.style.applymap(lambda x: 'background-color: #e8f3e8', subset=pd.IndexSlice[puts['inTheMoney'] == True, :])
 

@@ -28,6 +28,23 @@ NIFTY_50_TICKERS = [
     'SHRIRAMFIN.NS', 'HDFCLIFE.NS', 'BAJAJ-AUTO.NS', 'BPCL.NS', 'LTIM.NS'
 ]
 
+# --- Cached Data Fetching Functions ---
+@st.cache_data(ttl=600)  # Cache for 10 minutes
+def get_stock_info(ticker_str):
+    return yf.Ticker(ticker_str).info
+
+@st.cache_data(ttl=3600) # Cache for 1 hour
+def get_stock_history(ticker_str):
+    return yf.Ticker(ticker_str).history(period="1y")
+
+@st.cache_data(ttl=600)  # Cache for 10 minutes
+def get_option_expirations(ticker_str):
+    return yf.Ticker(ticker_str).options
+
+@st.cache_data(ttl=600)
+def get_option_chain(ticker_str, exp_date):
+    return yf.Ticker(ticker_str).option_chain(exp_date)
+
 # --- Calculation Functions ---
 
 def calculate_binomial_prices(S, K, r_percent, vol_percent, T):
@@ -118,22 +135,25 @@ ticker = st.sidebar.selectbox("Select Nifty 50 Stock", NIFTY_50_TICKERS)
 
 # --- Data Fetching ---
 try:
-    stock = yf.Ticker(ticker)
-    info = stock.info
+    info = get_stock_info(ticker)
+    hist = get_stock_history(ticker)
+    expirations = get_option_expirations(ticker)
+    
     live_price = info.get('regularMarketPrice', info.get('previousClose'))
-    hist = stock.history(period="1y")
     
     if live_price is None:
-        st.sidebar.error("Could not fetch live price.")
+        st.sidebar.error(f"Could not fetch live price for {ticker}.")
         st.stop()
 
     hist_vol = calculate_historical_volatility(hist)
-    expirations = stock.options
     
-    # FIX: Check if expirations tuple is empty. If so, stop the app.
     if not expirations:
         st.sidebar.warning(f"No options data available for {ticker}.")
-        st.warning(f"Could not retrieve any option expiration dates for {ticker}. Please select another stock.")
+        st.warning(
+            f"Could not retrieve any option expiration dates for {ticker}. "
+            "This can happen for certain stocks, outside of market hours, "
+            "or due to temporary issues with the data provider. Please select another stock or try again later."
+        )
         st.stop()
 
     st.sidebar.metric(label=f"Current Price ({ticker})", value=f"₹{live_price:,.2f}")
@@ -196,7 +216,7 @@ if 'error' not in results or not results['error']:
 # --- Option Chain Data ---
 st.subheader(f"Live Option Chain for {exp_date}")
 try:
-    opt_chain = stock.option_chain(exp_date)
+    opt_chain = get_option_chain(ticker, exp_date)
     calls, puts = opt_chain.calls, opt_chain.puts
     
     calls_styled = calls.style.applymap(lambda x: 'background-color: #e8f3e8', subset=pd.IndexSlice[calls['inTheMoney'] == True, :])
